@@ -304,8 +304,9 @@ class WP_WeChat_Post_Sync {
                 // 上传到微信 CDN
                 $wechat_cdn_url = WP_WeChat_API::upload_content_image( $src );
                 if ( is_wp_error( $wechat_cdn_url ) ) {
-                    // 若个别图片上传失败，记录警告但不完全中断同步流程，或者记录日志
-                    WP_WeChat_Sync_Logger::log( $post->ID, $post->post_title, 'auto', 'warning', '正文中有图片上传至微信 CDN 失败：' . $wechat_cdn_url->get_error_message() );
+                    // 若图片上传微信 CDN 失败，从正文中移除该图片标签，避免残留未转存外链导致微信报错 45166 invalid content
+                    WP_WeChat_Sync_Logger::log( $post->ID, $post->post_title, 'auto', 'warning', '正文中有图片上传至微信 CDN 失败，已自动过滤该图片标签以保证文章发布：' . $wechat_cdn_url->get_error_message() );
+                    $content = preg_replace( '/<img\b[^>]+src=[\'"]' . preg_quote( $src, '/' ) . '[\'"][^>]*>/i', '', $content );
                     continue;
                 }
 
@@ -315,9 +316,13 @@ class WP_WeChat_Post_Sync {
             update_post_meta( $post->ID, '_wechat_image_cdn_map', $image_cdn_map );
         }
 
-        // 清理正文中的不安全标签（如 <script>、<style>、<iframe> 等微信不支持的标签）
-        $content = preg_replace( '/<script\b[^>]*>(.*?)<\/script>/is', '', $content );
-        $content = preg_replace( '/<iframe\b[^>]*>(.*?)<\/iframe>/is', '', $content );
+        // 执行严格的微信内容清洗（清除外链、未清洗的 srcset/sizes 外部图片属性、Gutenberg 标记与非合规标签）
+        $content = self::sanitize_wechat_content( $content );
+
+        // 校验正文是否有效
+        if ( empty( trim( strip_tags( $content ) ) ) && ! preg_match( '/<img\b/i', $content ) ) {
+            return new WP_Error( 'empty_content', '文章正文处理后内容为空，微信公众号要求正文必须包含文字或图片。' );
+        }
 
         // 对微信排版进行视觉增强（添加适当的行高、字体颜色与内联段落样式）
         $content = self::format_wechat_html( $content );
@@ -340,7 +345,7 @@ class WP_WeChat_Post_Sync {
             );
 
             $notice_html = sprintf(
-                '<section style="margin-top: 30px; padding: 15px 14px; background: #f8f9fa; border-left: 4px solid #07c160; border-radius: 4px; font-size: 14px; color: #555; line-height: 1.6;">
+                '<section style="margin-top: 30px; padding: 15px 14px; background: #f8f9fa; border-left: 4px solid #07c160; border-radius: 4px; font-size: 14px; color: #555555; line-height: 1.6;">
                     <p style="margin: 0;">%s</p>
                 </section>',
                 $notice_body
@@ -352,26 +357,155 @@ class WP_WeChat_Post_Sync {
     }
 
     /**
+     * 针对微信草稿箱严格的内容校验规则进行深度清洗与合规化
+     * 解决微信 45166 (invalid content) 核心成因：
+     * 1. 个人订阅号不支持正文插入非微信外部超链接（自动转换为安全高亮文本）
+     * 2. 移除 <img> 标签中可能残留外部域名的 srcset、sizes 等响应式属性
+     * 3. 解除包裹图片的 <a> 标签（WordPress 默认会将图片包裹指向原图的外链）
+     * 4. 彻底清理 WordPress 区块标记 <!-- wp:... --> 与 HTML 注释
+     * 5. 移除表单、脚本、嵌入框架等微信不支持的异常标签
+     * 6. 清洗不可见 ASCII 控制字符
+     *
+     * @param string $content
+     * @return string
+     */
+    public static function sanitize_wechat_content( $content ) {
+        if ( empty( $content ) ) {
+            return '';
+        }
+
+        // 1. 清理 HTML 注释（包括 Gutenberg 区块标记 <!-- wp:... -->）
+        $content = preg_replace( '/<!--(.|\s)*?-->/', '', $content );
+
+        // 2. 清理完全不支持的交互与脚本标签
+        $unsupported = array(
+            '/<script\b[^>]*>(.*?)<\/script>/is',
+            '/<style\b[^>]*>(.*?)<\/style>/is',
+            '/<iframe\b[^>]*>(.*?)<\/iframe>/is',
+            '/<form\b[^>]*>(.*?)<\/form>/is',
+            '/<svg\b[^>]*>(.*?)<\/svg>/is',
+            '/<canvas\b[^>]*>(.*?)<\/canvas>/is',
+            '/<video\b[^>]*>(.*?)<\/video>/is',
+            '/<audio\b[^>]*>(.*?)<\/audio>/is',
+            '/<input\b[^>]*>/is',
+            '/<button\b[^>]*>(.*?)<\/button>/is',
+        );
+        $content = preg_replace( $unsupported, '', $content );
+
+        // 3. 转换 figure 与 figcaption
+        $content = preg_replace( '/<\/?figure\b[^>]*>/i', '', $content );
+        $content = preg_replace(
+            '/<figcaption\b[^>]*>(.*?)<\/figcaption>/is',
+            '<p style="font-size: 13px; color: #888888; text-align: center; margin: 6px 0 16px 0;">$1</p>',
+            $content
+        );
+
+        // 4. 解除图片外层的 <a> 链接包裹（WordPress 默认常给图片加指向附件或原图的外链）
+        $content = preg_replace( '/<a\b[^>]*>(\s*<img\b[^>]*>\s*)<\/a>/is', '$1', $content );
+
+        // 5. 深度清洗 <img> 标签属性（移除可能残留外部原图域名的 srcset、sizes 以及多余属性）
+        $content = preg_replace_callback( '/<img\b([^>]*)>/i', function( $matches ) {
+            $attrs = $matches[1];
+
+            // 提取 src
+            if ( ! preg_match( '/\bsrc=[\'"]([^\'"]+)[\'"]/i', $attrs, $src_m ) ) {
+                return ''; // 没有 src 的空图片标签移除
+            }
+            $src = trim( $src_m[1] );
+
+            // 提取 alt
+            $alt = '';
+            if ( preg_match( '/\balt=[\'"]([^\'"]*)[\'"]/i', $attrs, $alt_m ) ) {
+                $alt = esc_attr( trim( $alt_m[1] ) );
+            }
+
+            // 微信图文标准安全图片标签（杜绝 srcset、sizes 等残留外部域名的属性）
+            return sprintf(
+                '<img src="%s" alt="%s" style="max-width: 100%% !important; height: auto !important; display: block; margin: 15px auto; border-radius: 4px;">',
+                esc_url( $src ),
+                $alt
+            );
+        }, $content );
+
+        // 6. 处理正文中的 <a> 超链接（个人订阅号不具备正文外链权限，外部链接会导致微信返回 45166 invalid content）
+        $content = preg_replace_callback( '/<a\b([^>]*)>(.*?)<\/a>/is', function( $matches ) {
+            $attrs = $matches[1];
+            $text  = $matches[2];
+
+            $href = '';
+            if ( preg_match( '/\bhref=[\'"]([^\'"]+)[\'"]/i', $attrs, $href_m ) ) {
+                $href = trim( $href_m[1] );
+            }
+
+            // 微信公众平台内部链接允许保留（如 mp.weixin.qq.com）
+            if ( false !== strpos( $href, 'mp.weixin.qq.com' ) || false !== strpos( $href, 'weixin.qq.com' ) ) {
+                return sprintf( '<a href="%s" style="color: #576b95; text-decoration: none;">%s</a>', esc_url( $href ), $text );
+            }
+
+            // 外部链接转换为微信安全高亮文本，避免 45166 拦截，同时保留视觉上的链接辨识度
+            return sprintf( '<span style="color: #576b95; text-decoration: underline;">%s</span>', $text );
+        }, $content );
+
+        // 7. 清理不可见的 ASCII 控制字符
+        $content = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $content );
+
+        return $content;
+    }
+
+    /**
      * 格式化 HTML 样式以更好兼容微信图文排版
      *
      * @param string $html
      * @return string
      */
     private static function format_wechat_html( $html ) {
-        // 图片默认居中且最大宽度 100%
-        $html = preg_replace(
-            '/<img\b([^>]*)>/i',
-            '<img $1 style="max-width: 100% !important; height: auto !important; display: block; margin: 15px auto; border-radius: 4px;">',
-            $html
-        );
+        // 段落排版优化
+        $html = preg_replace_callback( '/<p\b([^>]*)>/i', function( $m ) {
+            return self::inject_style( $m[0], 'margin: 0 0 16px 0; line-height: 1.8;' );
+        }, $html );
 
-        // 外层增加适合微信公众号阅读的容器排版
+        // 标题排版优化
+        $html = preg_replace_callback( '/<h2\b([^>]*)>/i', function( $m ) {
+            return self::inject_style( $m[0], 'margin: 28px 0 14px 0; font-size: 20px; font-weight: bold; color: #111111; border-left: 4px solid #07c160; padding-left: 10px; line-height: 1.4;' );
+        }, $html );
+
+        $html = preg_replace_callback( '/<h3\b([^>]*)>/i', function( $m ) {
+            return self::inject_style( $m[0], 'margin: 22px 0 12px 0; font-size: 17px; font-weight: bold; color: #222222; line-height: 1.4;' );
+        }, $html );
+
+        // 引用块排版优化
+        $html = preg_replace_callback( '/<blockquote\b([^>]*)>/i', function( $m ) {
+            return self::inject_style( $m[0], 'margin: 20px 0; padding: 12px 16px; background: #f8f9fa; border-left: 4px solid #07c160; color: #666666; font-size: 15px; line-height: 1.6;' );
+        }, $html );
+
+        // 代码块排版优化
+        $html = preg_replace_callback( '/<pre\b([^>]*)>/i', function( $m ) {
+            return self::inject_style( $m[0], 'background: #282c34; color: #abb2bf; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 18px 0;' );
+        }, $html );
+
+        // 外层增加适合微信公众号阅读的容器排版（避免使用单引号嵌套）
         $wrapped_html = sprintf(
-            '<section style="font-family: -apple-system, BlinkMacSystemFont, \'Helvetica Neue\', \'PingFang SC\', \'Hiragino Sans GB\', \'Microsoft YaHei UI\', \'Microsoft YaHei\', Arial, sans-serif; font-size: 16px; line-height: 1.8; color: #333333; letter-spacing: 0.5px; word-break: break-word;">%s</section>',
+            '<section style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 16px; line-height: 1.8; color: #333333; letter-spacing: 0.5px; word-break: break-word;">%s</section>',
             $html
         );
 
         return $wrapped_html;
+    }
+
+    /**
+     * 辅助方法：安全注入或合并内联样式，杜绝重复 style 属性
+     *
+     * @param string $tag_html 完整开始标签（如 <p class="abc" style="color:red">）
+     * @param string $new_style 新增样式规则
+     * @return string
+     */
+    private static function inject_style( $tag_html, $new_style ) {
+        if ( preg_match( '/\bstyle=[\'"]([^\'"]*)[\'"]/i', $tag_html, $m ) ) {
+            $existing = rtrim( trim( $m[1] ), ';' );
+            $combined = $existing . '; ' . $new_style;
+            return preg_replace( '/\bstyle=[\'"][^\'"]*[\'"]/i', 'style="' . esc_attr( $combined ) . '"', $tag_html );
+        }
+        return rtrim( $tag_html, '>' ) . ' style="' . esc_attr( $new_style ) . '">';
     }
 
     /**

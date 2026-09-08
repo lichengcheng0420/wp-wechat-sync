@@ -3,7 +3,7 @@
  * Plugin Name: WP WeChat Sync (微信公众号文章同步助手)
  * Plugin URI: https://lichengcheng.cn/
  * Description: 在 WordPress 中撰写或发布的文章可自动或一键同步到微信公众号草稿箱（或直接公开发布）。具备正文图片自动转存微信永久 CDN、封面智能提取、出口 IP 自动识别与详细日志跟踪功能。由 李成成的博客 (lichengcheng.cn) 原创打造。
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: 李成成的博客 (LiChengCheng)
  * Author URI: https://lichengcheng.cn/
  * License: GPLv2 or later
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // 核心常量定义
-define( 'WP_WECHAT_SYNC_VERSION', '1.0.5' );
+define( 'WP_WECHAT_SYNC_VERSION', '1.0.6' );
 define( 'WP_WECHAT_SYNC_FILE', __FILE__ );
 define( 'WP_WECHAT_SYNC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'WP_WECHAT_SYNC_URL', plugin_dir_url( __FILE__ ) );

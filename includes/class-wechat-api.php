@@ -128,6 +128,16 @@ class WP_WeChat_API {
             $is_temp    = true;
         }
 
+        // 微信仅支持 JPG/PNG 格式，如果是 WebP 则自动转为 JPG 临时文件
+        $converted_file = self::maybe_convert_webp_to_jpeg( $local_file );
+        if ( ! is_wp_error( $converted_file ) && $converted_file !== $local_file ) {
+            if ( $is_temp && file_exists( $local_file ) ) {
+                @unlink( $local_file );
+            }
+            $local_file = $converted_file;
+            $is_temp    = true;
+        }
+
         $url = 'https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token=' . rawurlencode( $token );
         $res = self::post_file( $url, $local_file );
 
@@ -168,6 +178,16 @@ class WP_WeChat_API {
                 return $temp_file;
             }
             $local_file = $temp_file;
+            $is_temp    = true;
+        }
+
+        // 微信仅支持 JPG/PNG 格式，如果是 WebP 则自动转为 JPG 临时文件
+        $converted_file = self::maybe_convert_webp_to_jpeg( $local_file );
+        if ( ! is_wp_error( $converted_file ) && $converted_file !== $local_file ) {
+            if ( $is_temp && file_exists( $local_file ) ) {
+                @unlink( $local_file );
+            }
+            $local_file = $converted_file;
             $is_temp    = true;
         }
 
@@ -404,6 +424,11 @@ class WP_WeChat_API {
             return $url;
         }
 
+        // 支持根相对路径（如 /wp-content/uploads/...）
+        if ( is_string( $url ) && strpos( $url, '/' ) === 0 && strpos( $url, '//' ) !== 0 ) {
+            $url = home_url( $url );
+        }
+
         $uploads = wp_upload_dir();
         $baseurl = $uploads['baseurl'];
         $basedir = $uploads['basedir'];
@@ -449,6 +474,46 @@ class WP_WeChat_API {
         }
 
         return $tmp_file;
+    }
+
+    /**
+     * 微信接口只支持 JPG/PNG 格式，若图片为 WebP 格式则自动转为 JPG 临时文件
+     *
+     * @param string $file_path
+     * @return string|WP_Error
+     */
+    public static function maybe_convert_webp_to_jpeg( $file_path ) {
+        if ( ! file_exists( $file_path ) ) {
+            return $file_path;
+        }
+
+        $info = @getimagesize( $file_path );
+        if ( empty( $info['mime'] ) || 'image/webp' !== $info['mime'] ) {
+            return $file_path;
+        }
+
+        if ( ! function_exists( 'imagecreatefromwebp' ) || ! function_exists( 'imagejpeg' ) ) {
+            return $file_path;
+        }
+
+        $im = @imagecreatefromwebp( $file_path );
+        if ( ! $im ) {
+            return $file_path;
+        }
+
+        $tmp_jpg = wp_tempnam( 'wechat_webp_' ) . '.jpg';
+        $w       = imagesx( $im );
+        $h       = imagesy( $im );
+        $bg      = imagecreatetruecolor( $w, $h );
+        $white   = imagecolorallocate( $bg, 255, 255, 255 );
+        imagefilledrectangle( $bg, 0, 0, $w, $h, $white );
+        imagecopy( $bg, $im, 0, 0, 0, 0, $w, $h );
+
+        imagejpeg( $bg, $tmp_jpg, 92 );
+        imagedestroy( $im );
+        imagedestroy( $bg );
+
+        return $tmp_jpg;
     }
 
     /**
@@ -529,6 +594,7 @@ class WP_WeChat_API {
             42001 => 'access_token 已过期，系统将自动尝试重新获取。',
             45009 => '接口调用频率超过微信单日限制。',
             45028 => '草稿箱已满或单日新增草稿数超限（微信限制每天最多 1000 篇）。',
+            45166 => '【文章正文内容不合规 (invalid content)】微信草稿箱对文章排版有严格限制（如个人订阅号不支持正文插入外部跳转超链接、正文中存在未转存至微信 CDN 的外部图片、或包含非法的 HTML 结构）。',
             48001 => '【API 功能未授权】当前接口未获得调用权限，请在微信开发者平台“接口管理 / 开放能力”中检查该接口权限状态。',
             50002 => '用户受限，当前微信公众号账号状态可能异常或已被冻结。',
         );
