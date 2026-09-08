@@ -505,113 +505,131 @@ class WP_WeChat_Post_Sync {
             return "###WECHAT_PRE_BLOCK_{$idx}###";
         }, $html );
 
-        // 2. 行内 <code> 排版优化（此时 pre 已被抽取，只匹配独立行内代码）
+        // 2. 清理空段落、无效占位与 Markdown 残留粗体
+        $html = preg_replace( '/<p\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/i', '', $html );
+        $html = preg_replace( '/\*\*([^\*\r\n]+)\*\*/', '<strong>$1</strong>', $html );
+
+        // 3. 行内 <code> 排版优化（此时 pre 已被抽取，只匹配独立行内代码）
         $html = preg_replace_callback( '/<code\b([^>]*)>(.*?)<\/code>/is', function( $m ) {
             return '<code style="background: #f3f4f6; color: #d63200; padding: 2px 6px; border-radius: 3px; font-size: 88%; font-family: Consolas, Monaco, monospace; word-break: break-word;">' . $m[2] . '</code>';
         }, $html );
 
-        // 3. 清理行内标签两端的非预期换行与制表符（避免微信把行内加粗和代码块拆成独立行）
+        // 4. 清理行内标签两端的非预期换行与制表符（避免微信把行内加粗和代码块拆成独立行）
         $html = preg_replace( '/(<(?:p|li|h[2-6]|strong|em)\b[^>]*>)\s*[\r\n]+\s*/i', '$1', $html );
         $html = preg_replace( '/\s*[\r\n]+\s*(<\/(?:p|li|h[2-6]|strong|em)>)/i', '$1', $html );
-        $html = preg_replace( '/(<\/strong>)\s*[\r\n]+\s*([，。：；！？、）】\)])/u', '$1$2', $html );
+        $html = preg_replace( '/(<\/strong>)\s*([，。：；！？、）】\):])/u', '$1$2', $html );
 
-        // 4. 有序列表 <ol> 与无序列表 <ul> 的微信图文兼容转换
-        // 微信官方自带样式 (ol, ul, li { list-style: none !important; }) 会抹除浏览器自带序号与圆点
-        // 通过注入实体序号与项目符号，确保在所有微信客户端 100% 必显且绝不丢失
+        // 5. 彻底解决微信公众号列表排版顽疾：将 <ol>/<ul> 转换为高兼容的 <section> + <p>
+        // 微信公众号官方样式 (ol, ul, li { list-style: none !important; }) 会强制抹除序号/圆点，
+        // 且 UEditor 富文本解析器在导入 <li> 内混排标签（如 span, strong）时会发生异常分段断行。
+        // 采用业界主流成熟方案（对齐 秀米/135/Doocs规范）：将列表扁平化为带内联前缀与层级缩进的标准 <p> 段落。
         if ( false !== stripos( $html, '<ol' ) || false !== stripos( $html, '<ul' ) ) {
             $dom = new DOMDocument();
             libxml_use_internal_errors( true );
             $dom->loadHTML( '<?xml encoding="UTF-8"><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
             libxml_clear_errors();
 
-            // 处理有序列表 <ol>
-            $ols = $dom->getElementsByTagName( 'ol' );
-            foreach ( $ols as $ol ) {
+            $transform_list = function( $list_node, $depth = 0 ) use ( &$transform_list, $dom ) {
+                $is_ordered = ( 'ol' === strtolower( $list_node->nodeName ) );
                 $counter = 1;
-                if ( $ol->hasAttribute( 'start' ) ) {
-                    $counter = intval( $ol->getAttribute( 'start' ) );
+                if ( $is_ordered && $list_node->hasAttribute( 'start' ) ) {
+                    $counter = intval( $list_node->getAttribute( 'start' ) );
                 }
-                $is_nested = ( $ol->parentNode && 'li' === strtolower( $ol->parentNode->nodeName ) );
-                $style = $is_nested
-                    ? 'margin: 6px 0 6px 18px; padding-left: 0; list-style: none;'
-                    : 'margin: 8px 0 16px 0; padding-left: 0; list-style: none;';
-                $ol->setAttribute( 'style', $style );
 
-                foreach ( $ol->childNodes as $child ) {
-                    if ( 'li' === strtolower( $child->nodeName ) ) {
-                        // 若 li 内部直接包含 p，将序号注入在 p 内并设为 inline，避免序号单独占一行
-                        $target_container = $child;
-                        foreach ( $child->childNodes as $sub ) {
-                            if ( XML_ELEMENT_NODE === $sub->nodeType ) {
-                                if ( 'p' === strtolower( $sub->nodeName ) ) {
-                                    $target_container = $sub;
-                                    $sub->setAttribute( 'style', 'margin: 0; display: inline;' );
-                                }
-                                break;
-                            }
-                        }
+                $container = $dom->createElement( 'section' );
+                $margin = ( 0 === $depth ) ? 'margin: 8px 0 16px 0;' : 'margin: 4px 0;';
+                $container->setAttribute( 'style', $margin );
 
-                        // 清理 target 开头的空白 TextNode
-                        while ( $target_container->firstChild && XML_TEXT_NODE === $target_container->firstChild->nodeType && '' === trim( $target_container->firstChild->textContent ) ) {
-                            $target_container->removeChild( $target_container->firstChild );
-                        }
-
-                        $text = trim( $child->textContent );
-                        // 检查是否已有手动序号（避免重复编号）
-                        if ( ! preg_match( '/^(?:\d+[\.、\)\:\-\s]|\(\d+\)|\[\d+\]|【\d+】|[①-⑳]|[一二三四五六七八九十]+[、\.])/u', $text ) ) {
-                            $badge = $dom->createElement( 'span', $counter . '. ' );
-                            $badge->setAttribute( 'style', 'font-weight: bold; color: #07c160; margin-right: 6px;' );
-                            if ( $target_container->firstChild ) {
-                                $target_container->insertBefore( $badge, $target_container->firstChild );
-                            } else {
-                                $target_container->appendChild( $badge );
-                            }
-                        }
-                        $child->setAttribute( 'style', 'margin: 4px 0; line-height: 1.8; list-style: none;' );
-                        $counter++;
+                foreach ( iterator_to_array( $list_node->childNodes ) as $child ) {
+                    if ( 'li' !== strtolower( $child->nodeName ) ) {
+                        continue;
                     }
+
+                    // 提取嵌套的子列表
+                    $nested_lists = array();
+                    foreach ( iterator_to_array( $child->childNodes ) as $sub ) {
+                        if ( XML_ELEMENT_NODE === $sub->nodeType && in_array( strtolower( $sub->nodeName ), array( 'ol', 'ul' ), true ) ) {
+                            $nested_lists[] = $sub;
+                        }
+                    }
+                    foreach ( $nested_lists as $nl ) {
+                        $child->removeChild( $nl );
+                    }
+
+                    // 清除首尾空白 TextNode
+                    while ( $child->firstChild && XML_TEXT_NODE === $child->firstChild->nodeType && '' === trim( $child->firstChild->textContent ) ) {
+                        $child->removeChild( $child->firstChild );
+                    }
+                    while ( $child->lastChild && XML_TEXT_NODE === $child->lastChild->nodeType && '' === trim( $child->lastChild->textContent ) ) {
+                        $child->removeChild( $child->lastChild );
+                    }
+
+                    $item_text = trim( $child->textContent );
+                    $has_prefix = preg_match( '/^(?:\d+[\.、\)\:\-\s]|\(\d+\)|\[\d+\]|【\d+】|[①-⑳]|[一二三四五六七八九十]+[、\.]|[•\-\*·◆◇■□▶▷√✓])/u', $item_text );
+
+                    $p = $dom->createElement( 'p' );
+                    $indent = ( $depth > 0 ) ? ( $depth * 20 ) . 'px' : '0';
+                    $p_style = 'margin: 4px 0 4px ' . $indent . '; line-height: 1.8; color: #333333;';
+                    $p->setAttribute( 'style', $p_style );
+
+                    if ( ! $has_prefix ) {
+                        $prefix_str = $is_ordered ? ( $counter . '. ' ) : '• ';
+                        $badge = $dom->createElement( 'span', $prefix_str );
+                        $badge->setAttribute( 'style', 'font-weight: bold; color: #07c160; margin-right: 4px;' );
+                        $p->appendChild( $badge );
+                    }
+
+                    // 移动节点至 p，若 li 内已有 p 则解包防止 p 标签嵌套
+                    while ( $child->firstChild ) {
+                        $node = $child->firstChild;
+                        $child->removeChild( $node );
+                        if ( XML_ELEMENT_NODE === $node->nodeType && 'p' === strtolower( $node->nodeName ) ) {
+                            while ( $node->firstChild ) {
+                                $sub = $node->firstChild;
+                                $node->removeChild( $sub );
+                                $p->appendChild( $sub );
+                            }
+                        } else {
+                            $p->appendChild( $node );
+                        }
+                    }
+
+                    // 去除段末可能由嵌套列表前产生的换行空白
+                    while ( $p->lastChild && XML_TEXT_NODE === $p->lastChild->nodeType ) {
+                        $p->lastChild->textContent = rtrim( $p->lastChild->textContent );
+                        break;
+                    }
+
+                    $container->appendChild( $p );
+
+                    // 递归转换并追加嵌套列表，保持缩进与层级结构
+                    foreach ( $nested_lists as $nl ) {
+                        $converted_nested = $transform_list( $nl, $depth + 1 );
+                        $container->appendChild( $converted_nested );
+                    }
+
+                    $counter++;
+                }
+
+                return $container;
+            };
+
+            // 收集所有顶层列表，防止子列表被重复作为顶层处理
+            $top_lists = array();
+            foreach ( $dom->getElementsByTagName( 'ol' ) as $ol ) {
+                if ( ! $ol->parentNode || 'li' !== strtolower( $ol->parentNode->nodeName ) ) {
+                    $top_lists[] = $ol;
+                }
+            }
+            foreach ( $dom->getElementsByTagName( 'ul' ) as $ul ) {
+                if ( ! $ul->parentNode || 'li' !== strtolower( $ul->parentNode->nodeName ) ) {
+                    $top_lists[] = $ul;
                 }
             }
 
-            // 处理无序列表 <ul>
-            $uls = $dom->getElementsByTagName( 'ul' );
-            foreach ( $uls as $ul ) {
-                $is_nested = ( $ul->parentNode && 'li' === strtolower( $ul->parentNode->nodeName ) );
-                $style = $is_nested
-                    ? 'margin: 6px 0 6px 18px; padding-left: 0; list-style: none;'
-                    : 'margin: 8px 0 16px 0; padding-left: 0; list-style: none;';
-                $ul->setAttribute( 'style', $style );
-
-                foreach ( $ul->childNodes as $child ) {
-                    if ( 'li' === strtolower( $child->nodeName ) ) {
-                        $target_container = $child;
-                        foreach ( $child->childNodes as $sub ) {
-                            if ( XML_ELEMENT_NODE === $sub->nodeType ) {
-                                if ( 'p' === strtolower( $sub->nodeName ) ) {
-                                    $target_container = $sub;
-                                    $sub->setAttribute( 'style', 'margin: 0; display: inline;' );
-                                }
-                                break;
-                            }
-                        }
-
-                        while ( $target_container->firstChild && XML_TEXT_NODE === $target_container->firstChild->nodeType && '' === trim( $target_container->firstChild->textContent ) ) {
-                            $target_container->removeChild( $target_container->firstChild );
-                        }
-
-                        $text = trim( $child->textContent );
-                        if ( ! preg_match( '/^[•\-\*·◆◇■□▶▷√✓]/u', $text ) ) {
-                            $bullet = $dom->createElement( 'span', '• ' );
-                            $bullet->setAttribute( 'style', 'color: #07c160; margin-right: 6px; font-weight: bold; line-height: 1;' );
-                            if ( $target_container->firstChild ) {
-                                $target_container->insertBefore( $bullet, $target_container->firstChild );
-                            } else {
-                                $target_container->appendChild( $bullet );
-                            }
-                        }
-                        $child->setAttribute( 'style', 'margin: 4px 0; line-height: 1.8; list-style: none;' );
-                    }
-                }
+            foreach ( $top_lists as $tl ) {
+                $replacement = $transform_list( $tl, 0 );
+                $tl->parentNode->replaceChild( $replacement, $tl );
             }
 
             $body = $dom->getElementsByTagName( 'body' )->item( 0 );
@@ -621,8 +639,11 @@ class WP_WeChat_Post_Sync {
             }
         }
 
-        // 5. 段落排版优化
+        // 6. 段落排版优化（保留已有自定义 style 的 p 标签）
         $html = preg_replace_callback( '/<p\b([^>]*)>/i', function( $m ) {
+            if ( preg_match( '/\bstyle=[\'"][^\'"]*[\'"]/i', $m[0] ) ) {
+                return $m[0];
+            }
             return self::inject_style( $m[0], 'margin: 0 0 16px 0; line-height: 1.8; color: #333333;' );
         }, $html );
 
