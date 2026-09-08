@@ -497,7 +497,7 @@ class WP_WeChat_Post_Sync {
      * @return string
      */
     private static function format_wechat_html( $html ) {
-        // 先保护 <pre>...</pre> 代码块，防止内部的 <code> 等被后续正则误修改
+        // 1. 先保护 <pre>...</pre> 代码块，防止内部标签被后续处理误修改
         $pre_blocks = array();
         $html = preg_replace_callback( '/<pre\b[^>]*>([\s\S]*?)<\/pre>/i', function( $m ) use ( &$pre_blocks ) {
             $idx = count( $pre_blocks );
@@ -505,17 +505,128 @@ class WP_WeChat_Post_Sync {
             return "###WECHAT_PRE_BLOCK_{$idx}###";
         }, $html );
 
-        // 行内 <code> 排版优化（此时 pre 已被抽取，只匹配独立行内代码）
+        // 2. 行内 <code> 排版优化（此时 pre 已被抽取，只匹配独立行内代码）
         $html = preg_replace_callback( '/<code\b([^>]*)>(.*?)<\/code>/is', function( $m ) {
-            return '<code style="background: #f3f4f6; color: #d63200; padding: 2px 6px; border-radius: 3px; font-size: 88%; font-family: Consolas, Monaco, monospace;">' . $m[2] . '</code>';
+            return '<code style="background: #f3f4f6; color: #d63200; padding: 2px 6px; border-radius: 3px; font-size: 88%; font-family: Consolas, Monaco, monospace; word-break: break-word;">' . $m[2] . '</code>';
         }, $html );
 
-        // 段落排版优化
+        // 3. 清理行内标签两端的非预期换行与制表符（避免微信把行内加粗和代码块拆成独立行）
+        $html = preg_replace( '/(<(?:p|li|h[2-6]|strong|em)\b[^>]*>)\s*[\r\n]+\s*/i', '$1', $html );
+        $html = preg_replace( '/\s*[\r\n]+\s*(<\/(?:p|li|h[2-6]|strong|em)>)/i', '$1', $html );
+        $html = preg_replace( '/(<\/strong>)\s*[\r\n]+\s*([，。：；！？、）】\)])/u', '$1$2', $html );
+
+        // 4. 有序列表 <ol> 与无序列表 <ul> 的微信图文兼容转换
+        // 微信官方自带样式 (ol, ul, li { list-style: none !important; }) 会抹除浏览器自带序号与圆点
+        // 通过注入实体序号与项目符号，确保在所有微信客户端 100% 必显且绝不丢失
+        if ( false !== stripos( $html, '<ol' ) || false !== stripos( $html, '<ul' ) ) {
+            $dom = new DOMDocument();
+            libxml_use_internal_errors( true );
+            $dom->loadHTML( '<?xml encoding="UTF-8"><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+            libxml_clear_errors();
+
+            // 处理有序列表 <ol>
+            $ols = $dom->getElementsByTagName( 'ol' );
+            foreach ( $ols as $ol ) {
+                $counter = 1;
+                if ( $ol->hasAttribute( 'start' ) ) {
+                    $counter = intval( $ol->getAttribute( 'start' ) );
+                }
+                $is_nested = ( $ol->parentNode && 'li' === strtolower( $ol->parentNode->nodeName ) );
+                $style = $is_nested
+                    ? 'margin: 6px 0 6px 18px; padding-left: 0; list-style: none;'
+                    : 'margin: 8px 0 16px 0; padding-left: 0; list-style: none;';
+                $ol->setAttribute( 'style', $style );
+
+                foreach ( $ol->childNodes as $child ) {
+                    if ( 'li' === strtolower( $child->nodeName ) ) {
+                        // 若 li 内部直接包含 p，将序号注入在 p 内并设为 inline，避免序号单独占一行
+                        $target_container = $child;
+                        foreach ( $child->childNodes as $sub ) {
+                            if ( XML_ELEMENT_NODE === $sub->nodeType ) {
+                                if ( 'p' === strtolower( $sub->nodeName ) ) {
+                                    $target_container = $sub;
+                                    $sub->setAttribute( 'style', 'margin: 0; display: inline;' );
+                                }
+                                break;
+                            }
+                        }
+
+                        // 清理 target 开头的空白 TextNode
+                        while ( $target_container->firstChild && XML_TEXT_NODE === $target_container->firstChild->nodeType && '' === trim( $target_container->firstChild->textContent ) ) {
+                            $target_container->removeChild( $target_container->firstChild );
+                        }
+
+                        $text = trim( $child->textContent );
+                        // 检查是否已有手动序号（避免重复编号）
+                        if ( ! preg_match( '/^(?:\d+[\.、\)\:\-\s]|\(\d+\)|\[\d+\]|【\d+】|[①-⑳]|[一二三四五六七八九十]+[、\.])/u', $text ) ) {
+                            $badge = $dom->createElement( 'span', $counter . '. ' );
+                            $badge->setAttribute( 'style', 'font-weight: bold; color: #07c160; margin-right: 6px;' );
+                            if ( $target_container->firstChild ) {
+                                $target_container->insertBefore( $badge, $target_container->firstChild );
+                            } else {
+                                $target_container->appendChild( $badge );
+                            }
+                        }
+                        $child->setAttribute( 'style', 'margin: 4px 0; line-height: 1.8; list-style: none;' );
+                        $counter++;
+                    }
+                }
+            }
+
+            // 处理无序列表 <ul>
+            $uls = $dom->getElementsByTagName( 'ul' );
+            foreach ( $uls as $ul ) {
+                $is_nested = ( $ul->parentNode && 'li' === strtolower( $ul->parentNode->nodeName ) );
+                $style = $is_nested
+                    ? 'margin: 6px 0 6px 18px; padding-left: 0; list-style: none;'
+                    : 'margin: 8px 0 16px 0; padding-left: 0; list-style: none;';
+                $ul->setAttribute( 'style', $style );
+
+                foreach ( $ul->childNodes as $child ) {
+                    if ( 'li' === strtolower( $child->nodeName ) ) {
+                        $target_container = $child;
+                        foreach ( $child->childNodes as $sub ) {
+                            if ( XML_ELEMENT_NODE === $sub->nodeType ) {
+                                if ( 'p' === strtolower( $sub->nodeName ) ) {
+                                    $target_container = $sub;
+                                    $sub->setAttribute( 'style', 'margin: 0; display: inline;' );
+                                }
+                                break;
+                            }
+                        }
+
+                        while ( $target_container->firstChild && XML_TEXT_NODE === $target_container->firstChild->nodeType && '' === trim( $target_container->firstChild->textContent ) ) {
+                            $target_container->removeChild( $target_container->firstChild );
+                        }
+
+                        $text = trim( $child->textContent );
+                        if ( ! preg_match( '/^[•\-\*·◆◇■□▶▷√✓]/u', $text ) ) {
+                            $bullet = $dom->createElement( 'span', '• ' );
+                            $bullet->setAttribute( 'style', 'color: #07c160; margin-right: 6px; font-weight: bold; line-height: 1;' );
+                            if ( $target_container->firstChild ) {
+                                $target_container->insertBefore( $bullet, $target_container->firstChild );
+                            } else {
+                                $target_container->appendChild( $bullet );
+                            }
+                        }
+                        $child->setAttribute( 'style', 'margin: 4px 0; line-height: 1.8; list-style: none;' );
+                    }
+                }
+            }
+
+            $body = $dom->getElementsByTagName( 'body' )->item( 0 );
+            $html = '';
+            foreach ( $body->childNodes as $c ) {
+                $html .= $dom->saveHTML( $c );
+            }
+        }
+
+        // 5. 段落排版优化
         $html = preg_replace_callback( '/<p\b([^>]*)>/i', function( $m ) {
             return self::inject_style( $m[0], 'margin: 0 0 16px 0; line-height: 1.8; color: #333333;' );
         }, $html );
 
-        // 标题排版优化
+        // 6. 标题排版优化
         $html = preg_replace_callback( '/<h2\b([^>]*)>/i', function( $m ) {
             return self::inject_style( $m[0], 'margin: 28px 0 14px 0; font-size: 20px; font-weight: bold; color: #111111; border-left: 4px solid #07c160; padding-left: 10px; line-height: 1.4;' );
         }, $html );
@@ -528,38 +639,51 @@ class WP_WeChat_Post_Sync {
             return self::inject_style( $m[0], 'margin: 18px 0 10px 0; font-size: 15px; font-weight: bold; color: #333333; line-height: 1.4;' );
         }, $html );
 
-        // 引用块排版优化
+        // 7. 引用块排版优化
         $html = preg_replace_callback( '/<blockquote\b([^>]*)>/i', function( $m ) {
             return self::inject_style( $m[0], 'margin: 20px 0; padding: 12px 16px; background: #f8f9fa; border-left: 4px solid #07c160; color: #666666; font-size: 15px; line-height: 1.6;' );
         }, $html );
 
-        // 列表排版优化
-        $html = preg_replace_callback( '/<ol\b([^>]*)>/i', function( $m ) {
-            return self::inject_style( $m[0], 'margin: 0 0 16px 0; padding-left: 24px; line-height: 1.8; color: #333333;' );
-        }, $html );
-
-        $html = preg_replace_callback( '/<ul\b([^>]*)>/i', function( $m ) {
-            return self::inject_style( $m[0], 'margin: 0 0 16px 0; padding-left: 24px; line-height: 1.8; color: #333333;' );
-        }, $html );
-
-        $html = preg_replace_callback( '/<li\b([^>]*)>/i', function( $m ) {
-            return self::inject_style( $m[0], 'margin: 4px 0; line-height: 1.8;' );
-        }, $html );
-
-        // 分割线排版优化
+        // 8. 分割线排版优化
         $html = preg_replace_callback( '/<hr\b([^>]*)>/i', function( $m ) {
             return self::inject_style( $m[0], 'border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;' );
         }, $html );
 
-        // 还原并美化 <pre> 代码块
+        // 9. 还原并美化 <pre> 代码块
+        // 微信草稿箱会把多行代码中的 \n 折叠为单行，这里将换行显式转为 <br/>，将缩进空格转为 &nbsp; 并赋予 pre-wrap 样式
         foreach ( $pre_blocks as $idx => $pre_html ) {
-            $formatted_pre = preg_replace_callback( '/<pre\b([^>]*)>/i', function( $pm ) {
-                return self::inject_style( $pm[0], 'background: #282c34; color: #abb2bf; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 18px 0; font-family: Consolas, Monaco, monospace;' );
-            }, $pre_html );
-            $html = str_replace( "###WECHAT_PRE_BLOCK_{$idx}###", $formatted_pre, $html );
+            $code_content = '';
+            if ( preg_match( '/<pre\b[^>]*>(?:\s*<code\b[^>]*>)?([\s\S]*?)(?:<\/code>\s*)?<\/pre>/i', $pre_html, $cm ) ) {
+                $code_content = $cm[1];
+            } else {
+                $code_content = $pre_html;
+            }
+
+            // 统一换行符
+            $code_content = str_replace( array( "\r\n", "\r" ), "\n", $code_content );
+            // 按行分割并处理空格缩进
+            $lines = explode( "\n", trim( $code_content, "\n" ) );
+            $formatted_lines = array();
+            foreach ( $lines as $line ) {
+                // 连续2个及以上空格转换为 &nbsp; 保留代码缩进与列对齐
+                $line = preg_replace_callback( '/ {2,}/', function( $m ) {
+                    return str_repeat( '&nbsp;', strlen( $m[0] ) );
+                }, $line );
+                // 行首单个空格也转为 &nbsp;
+                $line = preg_replace( '/^ /', '&nbsp;', $line );
+                $formatted_lines[] = $line;
+            }
+            $formatted_code = implode( "<br/>", $formatted_lines );
+
+            $pre_styled = sprintf(
+                '<pre style="background: #282c34; color: #abb2bf; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.6; margin: 18px 0; font-family: Consolas, Monaco, monospace; white-space: pre-wrap !important; word-wrap: break-word !important; word-break: break-all !important;"><code style="font-family: Consolas, Monaco, monospace; font-size: 13px; color: inherit; white-space: pre-wrap !important; word-break: break-all !important; display: block;">%s</code></pre>',
+                $formatted_code
+            );
+
+            $html = str_replace( "###WECHAT_PRE_BLOCK_{$idx}###", $pre_styled, $html );
         }
 
-        // 外层增加适合微信公众号阅读的容器排版
+        // 10. 外层增加适合微信公众号阅读的容器排版
         $wrapped_html = sprintf(
             '<section style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 16px; line-height: 1.8; color: #333333; letter-spacing: 0.5px; word-break: break-word;">%s</section>',
             $html
