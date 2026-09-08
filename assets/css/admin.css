@@ -1,0 +1,490 @@
+/**
+ * WP WeChat Sync - 后台样式表
+ */
+
+.wp-wechat-wrap {
+    margin-top: 15px;
+    max-width: 1280px;
+}
+
+.wp-wechat-title {
+    display: flex;
+    align-items: center;
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.wp-wechat-container {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.wp-wechat-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.wp-wechat-sidebar {
+    width: 320px;
+    flex-shrink: 0;
+}
+
+.wp-wechat-card {
+    background: #ffffff;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+}
+
+.wp-wechat-card .card-title {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1d2327;
+    border-bottom: 1px solid #f0f0f1;
+    padding-bottom: 10px;
+}
+
+.wp-wechat-card .card-desc {
+    color: #646970;
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.input-with-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.media-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wp-wechat-test-box {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #dcdcde;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#btn-test-connection {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    line-height: 1 !important;
+    padding: 0 14px !important;
+    font-size: 13px !important;
+    cursor: pointer;
+    vertical-align: middle;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+
+#btn-test-connection .dashicons {
+    width: 18px !important;
+    height: 18px !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    vertical-align: middle !important;
+}
+
+#btn-test-connection .btn-text {
+    line-height: 1 !important;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+#btn-test-connection.is-loading .dashicons {
+    animation: rotation 1s infinite linear;
+}
+
+.test-status {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.test-status.is-loading {
+    color: #2271b1;
+}
+
+.test-status.is-success {
+    color: #008a20;
+}
+
+.test-status.is-error {
+    color: #d63638;
+}
+
+/* 侧边栏卡片 */
+.sidebar-card {
+    padding: 16px 18px;
+}
+
+.sidebar-card h3 {
+    margin-top: 0;
+    font-size: 15px;
+    margin-bottom: 10px;
+}
+
+.ip-display-box {
+    background: #f6f7f7;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.ip-display-box code {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d2327;
+    background: transparent;
+    padding: 0;
+}
+
+.ip-steps {
+    font-size: 12px;
+    color: #50575e;
+    line-height: 1.5;
+    margin-top: 10px;
+}
+
+.ip-steps ol {
+    margin: 6px 0 0 18px;
+    padding: 0;
+}
+
+.tips-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: #50575e;
+    line-height: 1.6;
+}
+
+.tips-list li {
+    margin-bottom: 8px;
+}
+
+/* 日志部分 */
+.wp-wechat-logs-section {
+    background: #ffffff;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    padding: 20px 24px;
+    margin-top: 25px;
+}
+
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.logs-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.wp-wechat-log-table {
+    border: 1px solid #c3c4c7;
+}
+
+.wp-wechat-log-table th {
+    font-weight: 600;
+}
+
+.wp-wechat-log-table td {
+    vertical-align: middle;
+    font-size: 13px;
+}
+
+.log-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.badge-auto {
+    background: #e7f3fd;
+    color: #135e96;
+}
+
+.badge-manual {
+    background: #e6f7ec;
+    color: #007017;
+}
+
+.badge-test {
+    background: #f0f0f1;
+    color: #50575e;
+}
+
+.status-success {
+    color: #008a20;
+    font-weight: 600;
+}
+
+.status-warning {
+    color: #dba617;
+    font-weight: 600;
+}
+
+.status-error {
+    color: #d63638;
+    font-weight: 600;
+}
+
+.log-details {
+    margin-top: 5px;
+    font-size: 11px;
+}
+
+.log-details summary {
+    cursor: pointer;
+    color: #2271b1;
+}
+
+.log-details pre {
+    background: #f6f7f7;
+    padding: 8px;
+    border-radius: 3px;
+    overflow-x: auto;
+    max-height: 180px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Meta Box 样式 */
+.wp-wechat-metabox-wrapper {
+    font-size: 13px;
+}
+
+.sync-status-box {
+    background: #f8f9fa;
+    border: 1px solid #e2e4e7;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.metabox-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: #008a20;
+    color: #ffffff;
+}
+
+.badge-danger {
+    background: #d63638;
+    color: #ffffff;
+}
+
+.badge-gray {
+    background: #8c8f94;
+    color: #ffffff;
+}
+
+.meta-item {
+    font-size: 12px;
+    color: #646970;
+    margin-top: 4px;
+}
+
+.meta-item .meta-value {
+    color: #1d2327;
+    word-break: break-all;
+}
+
+.meta-error-notice {
+    background: #fcf0f1;
+    color: #d63638;
+    border: 1px solid #facfd2;
+    border-radius: 3px;
+    padding: 6px 8px;
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.btn-sync-now {
+    width: 100%;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    line-height: 1 !important;
+    padding: 0 14px !important;
+    font-size: 13px !important;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.btn-sync-now .dashicons {
+    width: 18px !important;
+    height: 18px !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    vertical-align: middle !important;
+}
+
+.btn-sync-now .btn-text {
+    line-height: 1 !important;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.btn-sync-now.is-loading .dashicons {
+    animation: rotation 1s infinite linear;
+}
+
+@keyframes rotation {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(359deg);
+    }
+}
+
+.manual-feedback {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    display: none;
+    padding: 6px 8px;
+    border-radius: 3px;
+}
+
+.manual-feedback.is-success {
+    background: #edfaef;
+    color: #007017;
+    border: 1px solid #a8e5b4;
+    display: block;
+}
+
+.manual-feedback.is-error {
+    background: #fcf0f1;
+    color: #d63638;
+    border: 1px solid #facfd2;
+    display: block;
+}
+
+/* 文章列表页快捷同步单元格样式 */
+.wechat-list-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.wechat-list-cell .metabox-badge {
+    padding: 3px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 3px;
+    display: inline-block;
+    line-height: 1.2;
+}
+
+.wechat-list-cell .btn-list-quick-sync {
+    height: 26px !important;
+    min-height: 26px !important;
+    line-height: 24px !important;
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.wechat-list-cell .is-syncing {
+    color: #2271b1;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.wechat-list-cell .is-syncing .dashicons {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+    animation: rotation 1s infinite linear;
+}
+
+@media (max-width: 960px) {
+    .wp-wechat-container {
+        flex-direction: column;
+    }
+    .wp-wechat-sidebar {
+        width: 100%;
+    }
+}
+
+/* 页脚版权样式 */
+.wp-wechat-footer {
+    margin-top: 30px;
+    padding: 16px 0 10px 0;
+    text-align: center;
+    font-size: 13px;
+    color: #646970;
+    border-top: 1px solid #dcdcde;
+}
+
+.wp-wechat-footer a {
+    color: #2271b1;
+    text-decoration: none;
+}
+
+.wp-wechat-footer a:hover {
+    text-decoration: underline;
+    color: #135e96;
+}
