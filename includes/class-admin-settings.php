@@ -136,6 +136,46 @@ class WP_WeChat_Admin_Settings {
         $clean['open_comment']          = ! empty( $input['open_comment'] ) ? 1 : 0;
         $clean['only_fans_comment']     = ! empty( $input['only_fans_comment'] ) ? 1 : 0;
 
+        // 微信公众号消息服务器配置
+        $clean['enable_message_server'] = ! empty( $input['enable_message_server'] ) ? 1 : 0;
+        $clean['message_server_token']  = isset( $input['message_server_token'] ) ? sanitize_text_field( trim( $input['message_server_token'] ) ) : '';
+
+        // 如果开启了消息服务器但 Token 为空，则自动生成一个 16 位安全 Token
+        if ( empty( $clean['message_server_token'] ) && ! empty( $clean['enable_message_server'] ) ) {
+            $clean['message_server_token'] = wp_generate_password( 16, false, false );
+        }
+
+        $clean['welcome_message']    = isset( $input['welcome_message'] ) ? sanitize_textarea_field( trim( $input['welcome_message'] ) ) : '';
+        $clean['default_reply_text'] = isset( $input['default_reply_text'] ) ? sanitize_textarea_field( trim( $input['default_reply_text'] ) ) : '';
+
+        // 关键词规则清洗
+        $clean_rules = array();
+        if ( ! empty( $input['keyword_rules'] ) && is_array( $input['keyword_rules'] ) ) {
+            foreach ( $input['keyword_rules'] as $rule ) {
+                if ( ! is_array( $rule ) ) {
+                    continue;
+                }
+                $kw = isset( $rule['keywords'] ) ? sanitize_text_field( trim( $rule['keywords'] ) ) : '';
+                if ( '' === $kw ) {
+                    continue;
+                }
+
+                $reply_type = isset( $rule['reply_type'] ) && in_array( $rule['reply_type'], array( 'text_link', 'news', 'text_only', 'custom_text' ), true )
+                    ? $rule['reply_type']
+                    : 'text_link';
+
+                $clean_rules[] = array(
+                    'keywords'    => $kw,
+                    'post_id'     => isset( $rule['post_id'] ) ? absint( $rule['post_id'] ) : 0,
+                    'reply_type'  => $reply_type,
+                    'prefix'      => isset( $rule['prefix'] ) ? sanitize_text_field( trim( $rule['prefix'] ) ) : '',
+                    'suffix'      => isset( $rule['suffix'] ) ? sanitize_text_field( trim( $rule['suffix'] ) ) : '',
+                    'custom_text' => isset( $rule['custom_text'] ) ? sanitize_textarea_field( trim( $rule['custom_text'] ) ) : '',
+                );
+            }
+        }
+        $clean['keyword_rules'] = $clean_rules;
+
         // 如果凭据发生变动，清空已缓存的 token
         $old_options = get_option( self::OPTION_KEY, array() );
         if ( ( $old_options['appid'] ?? '' ) !== $clean['appid'] || ( $old_options['appsecret'] ?? '' ) !== $clean['appsecret'] ) {
@@ -159,19 +199,24 @@ class WP_WeChat_Admin_Settings {
         $post_types = get_post_types( array( 'public' => true ), 'objects' );
 
         $defaults = array(
-            'appid'                => '',
-            'appsecret'            => '',
-            'auto_sync'            => 1,
-            'sync_on_update'       => 0,
-            'sync_action'          => 'draft',
-            'post_types'           => array( 'post' ),
-            'default_author'       => '',
-            'default_cover_image'  => '',
-            'add_source_url'       => 1,
-            'append_source_notice' => 1,
-            'custom_source_notice' => '',
-            'open_comment'         => 0,
-            'only_fans_comment'    => 0,
+            'appid'                 => '',
+            'appsecret'             => '',
+            'auto_sync'             => 1,
+            'sync_on_update'        => 0,
+            'sync_action'           => 'draft',
+            'post_types'            => array( 'post' ),
+            'default_author'        => '',
+            'default_cover_image'   => '',
+            'add_source_url'        => 1,
+            'append_source_notice'  => 1,
+            'custom_source_notice'  => '',
+            'open_comment'          => 0,
+            'only_fans_comment'     => 0,
+            'enable_message_server' => 0,
+            'message_server_token'  => wp_generate_password( 16, false, false ),
+            'keyword_rules'         => array(),
+            'welcome_message'       => '',
+            'default_reply_text'    => '',
         );
         $options = wp_parse_args( $options, $defaults );
         ?>
@@ -330,12 +375,199 @@ class WP_WeChat_Admin_Settings {
                             </table>
                         </div>
 
+                        <!-- 模块 4：微信公众号消息服务器与关键词实时回复 (开发模式) -->
+                        <div class="wp-wechat-card">
+                            <h2 class="card-title">
+                                4. 微信公众号消息服务器与关键词实时回复 (开发模式)
+                                <span class="badge-feature" style="font-size:12px;background:#e7f5eb;color:#07c160;padding:2px 8px;border-radius:3px;font-weight:normal;margin-left:8px;">个人号全面支持</span>
+                            </h2>
+                            <p class="card-desc">
+                                开启后，粉丝向公众号发送指定关键词（如 <code>codex</code>、<code>额度</code>、<code>重置</code>）时，插件将<strong>实时提取 WordPress 绑定文章的最新内容</strong>并自动回复。支持生成<strong>原网页实时刷新直达链接</strong>或<strong>单图文卡片</strong>，粉丝可直接转发到微信群，群友点击即可在微信中直接查看最新状态。
+                            </p>
+
+                            <table class="form-table">
+                                <tr>
+                                    <th scope="row">消息服务器开关</th>
+                                    <td>
+                                        <label>
+                                            <input type="checkbox" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[enable_message_server]" id="enable_message_server" value="1" <?php checked( $options['enable_message_server'], 1 ); ?>>
+                                            <strong>启用微信服务器接入与关键词实时回复功能</strong>
+                                        </label>
+                                        <p class="description">启用后，需在微信公众平台后台填写下方的 URL 与 Token 进行验证激活。</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label>服务器地址 (URL)</label></th>
+                                    <td>
+                                        <div class="server-url-box" style="margin-bottom:8px;">
+                                            <div style="display:flex;align-items:center;gap:8px;">
+                                                <input type="text" id="wechat_server_url" value="<?php echo esc_url( WP_WeChat_Message_Server::get_server_url() ); ?>" class="regular-text" readonly style="background:#f6f7f7;font-family:monospace;width:480px;">
+                                                <button type="button" class="button button-secondary copy-server-url-btn" data-target="#wechat_server_url">复制 URL</button>
+                                            </div>
+                                            <p class="description">请将此 URL 填入微信公众平台“基本配置 -> 服务器配置”的 <strong>URL (服务器地址)</strong> 中。</p>
+                                        </div>
+                                        <details style="font-size:13px;color:#646970;margin-top:6px;">
+                                            <summary style="cursor:pointer;color:#2271b1;">备用兼容接入地址（无伪静态或 REST API 被安全拦截时使用）</summary>
+                                            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                                                <input type="text" id="wechat_fallback_url" value="<?php echo esc_url( WP_WeChat_Message_Server::get_fallback_url() ); ?>" class="regular-text" readonly style="background:#f6f7f7;font-family:monospace;width:480px;">
+                                                <button type="button" class="button button-secondary copy-server-url-btn" data-target="#wechat_fallback_url">复制备用 URL</button>
+                                            </div>
+                                        </details>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="wechat_server_token">令牌 (Token) <span class="required">*</span></label></th>
+                                    <td>
+                                        <div style="display:flex;align-items:center;gap:8px;">
+                                            <input type="text" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[message_server_token]" id="wechat_server_token" value="<?php echo esc_attr( $options['message_server_token'] ); ?>" class="regular-text" placeholder="3-32位字符，如 a1b2c3d4e5f6" required style="font-family:monospace;">
+                                            <button type="button" class="button button-secondary" id="btn-generate-token">随机生成</button>
+                                        </div>
+                                        <p class="description">需与微信公众平台“服务器配置”中填写的 Token 完全一致（3-32 位字母或数字）。</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">消息加解密方式</th>
+                                    <td>
+                                        <span style="font-weight:600;color:#1d2327;">明文模式 (推荐)</span>
+                                        <p class="description">在微信公众平台配置服务器时，请务必勾选<strong>“明文模式”</strong>。</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">关键词回复规则</th>
+                                    <td>
+                                        <div class="keyword-rules-wrapper" style="max-width:850px;">
+                                            <table class="widefat rules-table" id="keyword-rules-table" style="margin-bottom:12px;background:#fff;border-radius:4px;">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="width:28%;">触发关键词 (多个逗号隔开)</th>
+                                                        <th style="width:22%;">关联文章 ID</th>
+                                                        <th style="width:28%;">回复形式</th>
+                                                        <th style="width:12%;">操作</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="keyword-rules-tbody">
+                                                    <?php
+                                                    $rules = ! empty( $options['keyword_rules'] ) && is_array( $options['keyword_rules'] ) ? $options['keyword_rules'] : array();
+                                                    if ( empty( $rules ) ) {
+                                                        // 默认提供一个示例规则骨架
+                                                        $rules = array(
+                                                            array(
+                                                                'keywords'    => 'codex,额度,重置',
+                                                                'post_id'     => '',
+                                                                'reply_type'  => 'text_link',
+                                                                'prefix'      => '【今日额度实时查询】',
+                                                                'suffix'      => '',
+                                                                'custom_text' => '',
+                                                            ),
+                                                        );
+                                                    }
+                                                    foreach ( $rules as $index => $rule ) :
+                                                        $post_title = '';
+                                                        if ( ! empty( $rule['post_id'] ) ) {
+                                                            $linked_p = get_post( (int) $rule['post_id'] );
+                                                            if ( $linked_p ) {
+                                                                $post_title = get_the_title( $linked_p );
+                                                            }
+                                                        }
+                                                        ?>
+                                                        <tr class="rule-row" data-index="<?php echo esc_attr( $index ); ?>">
+                                                            <td>
+                                                                <input type="text" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[keyword_rules][<?php echo esc_attr( $index ); ?>][keywords]" value="<?php echo esc_attr( $rule['keywords'] ?? '' ); ?>" class="large-text" placeholder="例：codex,额度,重置" required>
+                                                                <input type="text" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[keyword_rules][<?php echo esc_attr( $index ); ?>][prefix]" value="<?php echo esc_attr( $rule['prefix'] ?? '' ); ?>" class="large-text" placeholder="可选前缀，如【实时数据】" style="margin-top:4px;font-size:12px;">
+                                                            </td>
+                                                            <td>
+                                                                <input type="number" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[keyword_rules][<?php echo esc_attr( $index ); ?>][post_id]" value="<?php echo esc_attr( $rule['post_id'] ?? '' ); ?>" class="small-text post-id-input" placeholder="文章ID">
+                                                                <div class="post-title-preview" style="font-size:12px;color:#2271b1;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">
+                                                                    <?php echo esc_html( $post_title ? '已关联: ' . $post_title : '输入ID自动关联文章' ); ?>
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <select name="<?php echo esc_attr( self::OPTION_KEY ); ?>[keyword_rules][<?php echo esc_attr( $index ); ?>][reply_type]" class="rule-reply-type" style="width:100%;">
+                                                                    <option value="text_link" <?php selected( $rule['reply_type'] ?? 'text_link', 'text_link' ); ?>>【推荐】文本 + 网页直达链接</option>
+                                                                    <option value="news" <?php selected( $rule['reply_type'] ?? '', 'news' ); ?>>微信单图文卡片 (含封面/可转发)</option>
+                                                                    <option value="text_only" <?php selected( $rule['reply_type'] ?? '', 'text_only' ); ?>>纯文本 (仅提取正文并保留换行)</option>
+                                                                    <option value="custom_text" <?php selected( $rule['reply_type'] ?? '', 'custom_text' ); ?>>固定文本 (无需绑定文章)</option>
+                                                                </select>
+                                                                <div class="custom-text-box" style="<?php echo ( ( $rule['reply_type'] ?? '' ) === 'custom_text' ) ? '' : 'display:none;'; ?>margin-top:4px;">
+                                                                    <textarea name="<?php echo esc_attr( self::OPTION_KEY ); ?>[keyword_rules][<?php echo esc_attr( $index ); ?>][custom_text]" rows="2" class="large-text" placeholder="输入固定回复内容"><?php echo esc_textarea( $rule['custom_text'] ?? '' ); ?></textarea>
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <button type="button" class="button button-link-delete btn-remove-rule" style="color:#d63638;cursor:pointer;padding-top:6px;">删除</button>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+
+                                            <div style="display:flex;align-items:center;justify-content:space-between;">
+                                                <button type="button" class="button button-secondary" id="btn-add-keyword-rule">
+                                                    <span class="dashicons dashicons-plus-alt2" style="vertical-align:middle;font-size:16px;"></span>
+                                                    添加新关键词规则
+                                                </button>
+                                                <?php
+                                                $recent_posts = get_posts( array( 'numberposts' => 5, 'post_status' => 'publish' ) );
+                                                if ( ! empty( $recent_posts ) ) :
+                                                    ?>
+                                                    <span style="font-size:12px;color:#646970;">
+                                                        最近文章参考：
+                                                        <?php foreach ( $recent_posts as $rp ) : ?>
+                                                            <a href="javascript:void(0);" class="quick-fill-post-id" data-id="<?php echo esc_attr( $rp->ID ); ?>" title="点击填入 ID: <?php echo esc_attr( $rp->ID ); ?> (<?php echo esc_attr( $rp->post_title ); ?>)" style="margin-left:4px;">
+                                                                #<?php echo esc_html( $rp->ID ); ?>
+                                                            </a>
+                                                        <?php endforeach; ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="wechat_welcome_message">关注公众号欢迎语</label></th>
+                                    <td>
+                                        <textarea name="<?php echo esc_attr( self::OPTION_KEY ); ?>[welcome_message]" id="wechat_welcome_message" rows="3" class="large-text" placeholder="例：感谢关注！发送【codex】或【额度】即可实时获取最新更新记录；点击推送链接可直达原网页。"><?php echo esc_textarea( $options['welcome_message'] ); ?></textarea>
+                                        <p class="description">新用户关注公众号时自动回复此内容。留空则不回复（支持 <code>&lt;a href="..."&gt;超链接&lt;/a&gt;</code>）。</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row"><label for="wechat_default_reply_text">未匹配消息默认回复</label></th>
+                                    <td>
+                                        <textarea name="<?php echo esc_attr( self::OPTION_KEY ); ?>[default_reply_text]" id="wechat_default_reply_text" rows="2" class="large-text" placeholder="例：抱歉，未找到相关内容。您可以发送【codex】或【额度】查询最新动态。"><?php echo esc_textarea( $options['default_reply_text'] ); ?></textarea>
+                                        <p class="description">当用户发送的内容未命中任何关键词时回复。<strong>强烈建议留空</strong>（留空时微信保持静默不打扰，完全符合常规公众号体验）。</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+
                         <?php submit_button( '保存设置', 'primary', 'submit', true, array( 'id' => 'btn-save-settings' ) ); ?>
                     </form>
                 </div>
 
                 <!-- 右侧边栏：服务器 IP 指引与快捷信息 -->
                 <div class="wp-wechat-sidebar">
+                    <!-- 模块 4 关联：微信公众平台服务器配置指引卡片 -->
+                    <div class="wp-wechat-card sidebar-card server-card" style="border-left:4px solid #07c160;">
+                        <h3>
+                            <span class="dashicons dashicons-admin-network" style="color:#07c160;vertical-align:text-bottom;"></span>
+                            微信服务器配置指引 (5步接入)
+                        </h3>
+                        <div class="server-steps" style="font-size:13px;line-height:1.6;color:#50575e;">
+                            <ol style="margin-left:18px;padding-left:0;">
+                                <li>登录 <a href="https://mp.weixin.qq.com" target="_blank" rel="noopener">微信公众平台后台</a>。</li>
+                                <li>左侧侧边栏滑动到底部，点击<strong>“设置与开发 -> 基本配置”</strong>。</li>
+                                <li>在“服务器配置”栏目，点击<strong>“修改配置”</strong>。</li>
+                                <li><strong>URL (服务器地址)</strong>：粘贴左侧显示的 URL。<br>
+                                    <strong>Token (令牌)</strong>：粘贴左侧生成的 Token。<br>
+                                    <strong>消息加解密方式</strong>：勾选<strong>“明文模式”</strong>。
+                                </li>
+                                <li>点击<strong>“提交”</strong>（系统将瞬间完成握手验证），提交成功后点击右侧的<strong>“启用”</strong>按钮即可生效！</li>
+                            </ol>
+                            <div style="background:#f6f7f7;padding:8px 10px;border-radius:4px;margin-top:10px;border:1px solid #e2e4e7;font-size:12px;">
+                                💡 <strong>提示</strong>：个人订阅号在此模式下拥有极高自由度，发送的链接可任意跳转至您的 WordPress 网页，亦可转发到任意微信群！
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="wp-wechat-card sidebar-card ip-card">
                         <h3>
                             <span class="dashicons dashicons-admin-site-alt3" style="color:#2271b1;vertical-align:text-bottom;"></span>
@@ -424,6 +656,8 @@ class WP_WeChat_Admin_Settings {
                                                 echo '<span class="log-badge badge-auto">自动同步</span>';
                                             } elseif ( 'manual' === $log['type'] ) {
                                                 echo '<span class="log-badge badge-manual">手动同步</span>';
+                                            } elseif ( 'server' === $log['type'] ) {
+                                                echo '<span class="log-badge badge-server" style="background:#f0f6fc;color:#0969da;border:1px solid #c8e1ff;">自动回复</span>';
                                             } else {
                                                 echo '<span class="log-badge badge-test">测试</span>';
                                             }
