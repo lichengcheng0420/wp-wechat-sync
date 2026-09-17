@@ -365,7 +365,8 @@ class WP_WeChat_Message_Server {
         $lines[] = "────────────────";
         $lines[] = $clean_text;
         $lines[] = "────────────────";
-        $lines[] = sprintf( '🔗 <a href="%s">点击这里直达原网页 (实时刷新)</a>', esc_url( $permalink ) );
+        $lines[] = "🔗 直达原网页 (实时刷新)：";
+        $lines[] = sprintf( '<a href="%s">%s</a>', esc_url( $permalink ), esc_url( $permalink ) );
 
         if ( ! empty( $suffix ) ) {
             $lines[] = '';
