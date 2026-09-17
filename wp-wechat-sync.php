@@ -20,6 +20,7 @@ define( 'WP_WECHAT_SYNC_VERSION', '1.1.0' );
 define( 'WP_WECHAT_SYNC_FILE', __FILE__ );
 define( 'WP_WECHAT_SYNC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'WP_WECHAT_SYNC_URL', plugin_dir_url( __FILE__ ) );
+define( 'WP_WECHAT_SYNC_OPTION_KEY', 'wp_wechat_sync_options' );
 
 /**
  * 核心插件类

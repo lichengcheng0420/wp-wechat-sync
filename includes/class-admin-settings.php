@@ -404,7 +404,7 @@ class WP_WeChat_Admin_Settings {
                                                 <input type="text" id="wechat_server_url" value="<?php echo esc_url( WP_WeChat_Message_Server::get_server_url() ); ?>" class="regular-text" readonly style="background:#f6f7f7;font-family:monospace;width:480px;">
                                                 <button type="button" class="button button-secondary copy-server-url-btn" data-target="#wechat_server_url">复制 URL</button>
                                             </div>
-                                            <p class="description">请将此 URL 填入微信公众平台“基本配置 -> 服务器配置”的 <strong>URL (服务器地址)</strong> 中。</p>
+                                            <p class="description">请将此 URL 填入 <a href="https://developers.weixin.qq.com/console/product/mp/wxcbdf7caf12aff350?tab1=basicInfo&tab2=apiMonitoring" target="_blank" rel="noopener">微信开发者平台</a><strong>“基础信息 -> 域名与消息推送配置 -> 消息推送”</strong>的 <strong>URL (服务器地址)</strong> 中。</p>
                                         </div>
                                         <details style="font-size:13px;color:#646970;margin-top:6px;">
                                             <summary style="cursor:pointer;color:#2271b1;">备用兼容接入地址（无伪静态或 REST API 被安全拦截时使用）</summary>
@@ -422,7 +422,7 @@ class WP_WeChat_Admin_Settings {
                                             <input type="text" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[message_server_token]" id="wechat_server_token" value="<?php echo esc_attr( $options['message_server_token'] ); ?>" class="regular-text" placeholder="3-32位字符，如 a1b2c3d4e5f6" required style="font-family:monospace;">
                                             <button type="button" class="button button-secondary" id="btn-generate-token">随机生成</button>
                                         </div>
-                                        <p class="description">需与微信公众平台“服务器配置”中填写的 Token 完全一致（3-32 位字母或数字）。</p>
+                                        <p class="description">需与微信开发者平台“消息推送”中填写的 Token 完全一致（3-32 位字母或数字）。</p>
                                     </td>
                                 </tr>
                                 <tr>
@@ -545,25 +545,25 @@ class WP_WeChat_Admin_Settings {
 
                 <!-- 右侧边栏：服务器 IP 指引与快捷信息 -->
                 <div class="wp-wechat-sidebar">
-                    <!-- 模块 4 关联：微信公众平台服务器配置指引卡片 -->
+                    <!-- 模块 4 关联：微信开发者平台消息推送配置指引卡片 -->
                     <div class="wp-wechat-card sidebar-card server-card" style="border-left:4px solid #07c160;">
                         <h3>
                             <span class="dashicons dashicons-admin-network" style="color:#07c160;vertical-align:text-bottom;"></span>
-                            微信服务器配置指引 (5步接入)
+                            微信消息推送配置指引 (新版控制台)
                         </h3>
                         <div class="server-steps" style="font-size:13px;line-height:1.6;color:#50575e;">
                             <ol style="margin-left:18px;padding-left:0;">
-                                <li>登录 <a href="https://mp.weixin.qq.com" target="_blank" rel="noopener">微信公众平台后台</a>。</li>
-                                <li>左侧侧边栏滑动到底部，点击<strong>“设置与开发 -> 基本配置”</strong>。</li>
-                                <li>在“服务器配置”栏目，点击<strong>“修改配置”</strong>。</li>
+                                <li>登录 <a href="https://developers.weixin.qq.com/console/product/mp/wxcbdf7caf12aff350?tab1=basicInfo&tab2=apiMonitoring" target="_blank" rel="noopener">微信开发者平台</a> 进入公众号控制台。</li>
+                                <li>进入<strong>“基础信息”</strong>页面，向下滑动找到<strong>“域名与消息推送配置”</strong>。</li>
+                                <li>在<strong>“消息推送”</strong>栏目，点击右侧的<strong>“配置”</strong>（若为首次请点击“配置”或“启用”）。</li>
                                 <li><strong>URL (服务器地址)</strong>：粘贴左侧显示的 URL。<br>
                                     <strong>Token (令牌)</strong>：粘贴左侧生成的 Token。<br>
-                                    <strong>消息加解密方式</strong>：勾选<strong>“明文模式”</strong>。
+                                    <strong>消息加解密方式</strong>：建议勾选<strong>“明文模式”</strong>。
                                 </li>
-                                <li>点击<strong>“提交”</strong>（系统将瞬间完成握手验证），提交成功后点击右侧的<strong>“启用”</strong>按钮即可生效！</li>
+                                <li>点击<strong>“提交”</strong>（系统瞬间完成握手验证），提交成功后点击右侧的<strong>“启用”</strong>按钮即可生效！</li>
                             </ol>
                             <div style="background:#f6f7f7;padding:8px 10px;border-radius:4px;margin-top:10px;border:1px solid #e2e4e7;font-size:12px;">
-                                💡 <strong>提示</strong>：个人订阅号在此模式下拥有极高自由度，发送的链接可任意跳转至您的 WordPress 网页，亦可转发到任意微信群！
+                                💡 <strong>排查提示</strong>：若提示“HTTP 返回非 200”，请先确认 WordPress 插件后台的【保存设置】已点击，且两边 Token 完全一致。
                             </div>
                         </div>
                     </div>

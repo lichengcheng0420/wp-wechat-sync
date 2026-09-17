@@ -82,11 +82,12 @@ class WP_WeChat_Message_Server {
         $echostr   = $request->get_param( 'echostr' );
 
         if ( self::check_signature( $signature, $timestamp, $nonce ) ) {
-            // 微信要求原样返回 echostr 纯文本
+            // 微信要求原样返回 echostr 纯文本，HTTP 状态码必须严格为 200
+            status_header( 200 );
             if ( ! headers_sent() ) {
                 header( 'Content-Type: text/plain; charset=utf-8' );
             }
-            echo esc_html( $echostr );
+            echo (string) $echostr;
             exit;
         }
 
@@ -179,7 +180,7 @@ class WP_WeChat_Message_Server {
             return false;
         }
 
-        $options = get_option( WP_WeChat_Admin_Settings::OPTION_KEY, array() );
+        $options = get_option( defined( 'WP_WECHAT_SYNC_OPTION_KEY' ) ? WP_WECHAT_SYNC_OPTION_KEY : 'wp_wechat_sync_options', array() );
         $token   = ! empty( $options['message_server_token'] ) ? trim( $options['message_server_token'] ) : '';
 
         // 如果未配置 token，则不允许验证通过
@@ -216,7 +217,7 @@ class WP_WeChat_Message_Server {
         $from_user = (string) $msg->FromUserName; // 发送方 OpenID
         $msg_type  = (string) $msg->MsgType;
 
-        $options = get_option( WP_WeChat_Admin_Settings::OPTION_KEY, array() );
+        $options = get_option( defined( 'WP_WECHAT_SYNC_OPTION_KEY' ) ? WP_WECHAT_SYNC_OPTION_KEY : 'wp_wechat_sync_options', array() );
 
         // 1. 处理关注事件 (subscribe)
         if ( 'event' === $msg_type && 'subscribe' === strtolower( (string) $msg->Event ) ) {
@@ -432,7 +433,7 @@ class WP_WeChat_Message_Server {
         }
 
         // 3. 全局默认封面
-        $options = get_option( WP_WeChat_Admin_Settings::OPTION_KEY, array() );
+        $options = get_option( defined( 'WP_WECHAT_SYNC_OPTION_KEY' ) ? WP_WECHAT_SYNC_OPTION_KEY : 'wp_wechat_sync_options', array() );
         if ( ! empty( $options['default_cover_image'] ) ) {
             return $options['default_cover_image'];
         }
